@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>Redirect Explorer</title>
+    <script
+      src="https://unpkg.com/react@18/umd/react.development.js"
+      crossorigin
+    ></script>
+    <script
+      src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"
+      crossorigin
+    ></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <style>
+    body {
+      font-family: sans-serif;
+      padding: 2rem;
+    }
+
+    input[type="text"],
+    select {
+      margin: 0.5rem 0;
+      width: 100%;
+      padding: 0.5rem;
+    }
+
+    button {
+      margin-right: 1rem;
+      padding: 0.5rem 1rem;
+    }
+
+    .link-list {
+      margin-top: 1rem;
+    }
+
+    .link-list a {
+      display: block;
+      margin: 0.2rem 0;
+    }
+    </style>
+  </head>
+
+  <body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+    function stripUTM(inputUrl) {
+      try {
+        const u = new URL(inputUrl);
+        const newParams = new URLSearchParams();
+        for (const [key, value] of u.searchParams) {
+          if (!key.toLowerCase().startsWith("utm_")) {
+            newParams.append(key, value);
+          }
+        }
+        u.search = newParams.toString();
+        return u.toString();
+      } catch (e) {
+        return inputUrl;
+      }
+    }
+
+    function App() {
+      const [url, setUrl] = React.useState("");
+      const [doh, setDoh] = React.useState("https://cloudflare-dns.com/dns-query");
+      const [results, setResults] = React.useState([]);
+      const [error, setError] = React.useState(null);
+      const [stripUTMEnabled, setStripUTMEnabled] = React.useState(true);
+
+      const handleShowRedirects = async () => {
+        setResults([]);
+        setError(null);
+        try {
+          const resp = await fetch(
+            `/api/redirect?url=${encodeURIComponent(url)}&doh=${
+              encodeURIComponent(doh)
+            }`,
+          );
+          if (!resp.ok) throw new Error(await resp.text());
+          let data = await resp.json();
+          if (stripUTMEnabled) {
+            data = data.map(entry => ({
+              ...entry,
+              url: stripUTM(entry.url),
+            }));
+          }
+          setResults(data);
+        } catch (err) {
+          setError(err.message);
+        }
+      };
+
+      const handleFeelingLucky = async () => {
+        setError(null);
+        try {
+          const resp = await fetch(
+            `/api/redirect?url=${encodeURIComponent(url)}&doh=${
+              encodeURIComponent(doh)
+            }`,
+          );
+          if (!resp.ok) throw new Error(await resp.text());
+          let data = await resp.json();
+          let last = data[data.length - 1];
+          if (last && last.url) {
+            const finalUrl = stripUTMEnabled ? stripUTM(last.url) : last.url;
+            window.location.href = finalUrl;
+          }
+        } catch (err) {
+          setError(err.message);
+        }
+      };
+
+      const getStatusColor = (status) => {
+        if (status >= 500) return "red";
+        if (status >= 400) return "orange";
+        if (status >= 300) return "gold";
+        if (status >= 200) return "lightgreen";
+        return "white";
+      };
+
+      return (
+        <div>
+          <h1>Redirect Me</h1>
+          <input
+            type="text"
+            value={url}
+            onChange={e => setUrl(e.target.value)}
+            placeholder="Enter URL"
+          />
+          <select value={doh} onChange={e => setDoh(e.target.value)}>
+            <option value="https://cloudflare-dns.com/dns-query">
+              Cloudflare
+            </option>
+            <option value="https://dns.adguard.com/dns-query">
+              AdGuard DNS
+            </option>
+            <option value="https://dns.nextdns.io/">NextDNS</option>
+            <option value="https://dns.google/resolve">Google</option>
+          </select>
+          <div style={{ maxWidth: "10rem", margin: "1rem 0" }}>
+            <label htmlFor="stripUTM">
+              Strip UTM parameters
+            </label>
+            <input
+              name="stripUTM"
+              type="checkbox"
+              checked={stripUTMEnabled}
+              onChange={e => setStripUTMEnabled(e.target.checked)}
+            />
+            {" "}
+          </div>
+          <div>
+            <button onClick={handleShowRedirects}>Show Redirects</button>
+            <button onClick={handleFeelingLucky}>Feeling Lucky</button>
+          </div>
+          {error && <p style={{ color: "red" }}>{error}</p>}
+          <div className="link-list">
+            {results.map((step, i) => {
+              const displayUrl = step.url.length > 200
+                ? step.url.slice(0, 200) + "..."
+                : step.url;
+              const bg = getStatusColor(step.status);
+              return (
+                <a
+                  key={i}
+                  href={step.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={step.url}
+                  style={{
+                    backgroundColor: bg,
+                    padding: "0.5rem",
+                    display: "block",
+                    margin: "0.3rem 0",
+                    borderRadius: "4px",
+                    textDecoration: "none",
+                    color: "black",
+                  }}
+                >
+                  {step.status} - {displayUrl}
+                </a>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
+  </body>
+</html>
